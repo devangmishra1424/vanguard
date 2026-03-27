@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Table,
   TableBody,
@@ -8,54 +8,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+} from "./ui/table";
+import { Badge } from "./ui/badge";
 import { useStore } from '@/lib/store';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Info, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Info } from 'lucide-react';
 
 export const LabTable = () => {
-  const { labValues, language, t, setReportData } = useStore();
-  const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
+  const { labValues, language } = useStore();
 
-  useEffect(() => {
-    // For each lab value, if layman explanation is missing for current language, fetch it
-    const fetchExplanations = async () => {
-      const updatedValues = [...labValues];
-      let changed = false;
-
-      for (let i = 0; i < updatedValues.length; i++) {
-        const v = updatedValues[i];
-        const key = language === 'EN' ? 'layman_en' : 'layman_hi';
-        
-        if (!v[key as keyof typeof v]) {
-          setLoadingMap(prev => ({ ...prev, [v.name]: true }));
-          try {
-            const res = await fetch('/api/layman', {
-              method: 'POST',
-              body: JSON.stringify({ test: v.name, value: v.value, status: v.status, lang: language })
-            });
-            const data = await res.json();
-            if (data.explanation) {
-              (updatedValues[i] as any)[key] = data.explanation;
-              changed = true;
-            }
-          } catch (e) {
-            console.error(e);
-          }
-          setLoadingMap(prev => ({ ...prev, [v.name]: false }));
-        }
-      }
-
-      if (changed) {
-        setReportData({ labValues: updatedValues });
-      }
-    };
-
-    if (labValues.length > 0) {
-      fetchExplanations();
-    }
-  }, [labValues, language, setReportData]);
+  // Explanations are now pre-populated in CLINICAL_DB within analyze-report/route.ts
+  // No extra fetch needed – layman_en is baked into the labValues array
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
@@ -91,14 +54,7 @@ export const LabTable = () => {
                 <div className="flex items-start gap-2">
                   <Info className="w-3 h-3 text-[#f59e0b] mt-1 shrink-0" />
                   <div className="text-xs text-slate-400 leading-relaxed italic">
-                    {loadingMap[row.name] ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>Generating...</span>
-                      </div>
-                    ) : (
-                      language === 'EN' ? row.layman_en : row.layman_hi
-                    ) || 'Processing...'}
+                    {(language === 'EN' ? (row as any).layman_en : (row as any).layman_hi) || '–'}
                   </div>
                 </div>
               </TableCell>

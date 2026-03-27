@@ -29,7 +29,10 @@ export default function LandingPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpeg', '.jpg', '.png'] },
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png'],
+      'application/pdf': ['.pdf']
+    },
     maxFiles: 1,
   });
 
@@ -57,6 +60,7 @@ export default function LandingPage() {
             base64Image: base64,
             mimeType: file.type,
             language: language,
+            isPDF: file.type === 'application/pdf',
           }),
         });
 

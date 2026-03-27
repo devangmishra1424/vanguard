@@ -36,6 +36,11 @@ import TypewriterText from '@/components/TypewriterText';
 
 export default function Dashboard() {
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const { 
     reportText, 
     language, 
@@ -177,26 +182,28 @@ export default function Dashboard() {
         <div className="md:col-span-3 grid grid-rows-2 gap-6 h-full">
           {/* AI Confidence */}
           <motion.div variants={item} className="h-full">
-            <Card className="bg-slate-900 border-slate-800 p-6 flex flex-col items-center justify-center h-full relative group">
+            <Card className="bg-slate-900 border-slate-800 p-6 flex flex-col items-center justify-center h-full relative group min-h-[220px]">
               <div className="absolute top-4 left-4">
                  <h3 className="font-bold text-[9px] uppercase tracking-[0.3em] text-slate-500">{t('ai_confidence')}</h3>
               </div>
               <div className="w-full h-[180px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadialBarChart 
-                    innerRadius="70%" 
-                    outerRadius="100%" 
-                    data={[{ name: 'Confidence', value: ai_confidence_score, fill: '#f59e0b' }]} 
-                    startAngle={180} 
-                    endAngle={-180}
-                  >
-                    <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-                    <RadialBar background dataKey="value" cornerRadius={15} />
-                    <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="fill-white text-3xl font-black">
-                      {ai_confidence_score}%
-                    </text>
-                  </RadialBarChart>
-                </ResponsiveContainer>
+                {isMounted && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadialBarChart 
+                      innerRadius="70%" 
+                      outerRadius="100%" 
+                      data={[{ name: 'Confidence', value: ai_confidence_score || 0, fill: '#f59e0b' }]} 
+                      startAngle={180} 
+                      endAngle={-180}
+                    >
+                      <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+                      <RadialBar background dataKey="value" cornerRadius={15} />
+                      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="fill-white text-3xl font-black">
+                        {ai_confidence_score || 0}%
+                      </text>
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </Card>
           </motion.div>

@@ -336,35 +336,15 @@ export const executeFullPipeline = async (
   contextType: 'report' | 'diet' | 'exercise' | 'chat' = 'chat'
 ): Promise<{ processed: string; ragContext: string; generated: string }> => {
   try {
-    if (!isInitialized) await initializeRAG();
+    // SIMPLIFIED: Skip RAG entirely (HF flan-t5 is 410 Gone, FAISS returns 0 results)
+    // Call Groq directly for faster, more reliable responses
+    console.log(`🚀 Calling Groq directly (RAG disabled): ${contextType}`);
+    const generated = await generateWithGroq(userQuery, systemPrompt, '');
 
-    // BUG 2 FIX: Skip Stage 1 (HF flan-t5 endpoint is 410 Gone)
-    // Go directly to Stage 2 & 3 to reduce latency from ~53s to ~8s
-    let enrichedQuery = userQuery;
-    if (!SKIP_HF_STAGE1) {
-      // Stage 1: HF flan-t5 processing (context-aware) — DISABLED
-      if (contextType === 'report') {
-        enrichedQuery = await queryHFModel(`Extract key medical findings from report: ${userQuery}`);
-      } else if (contextType === 'diet') {
-        enrichedQuery = await queryHFModel(`Summarize dietary requirements for condition: ${userQuery}`);
-      } else if (contextType === 'exercise') {
-        enrichedQuery = await queryHFModel(`Summarize safe exercise recommendations for: ${userQuery}`);
-      } else {
-        enrichedQuery = await queryHFModel(`Prepare medical query for knowledge base search: ${userQuery}`);
-      }
-    }
-
-    // Stage 2: FAISS retrieval (BUG 6 FIX: lowered threshold from 0.2 to 0.15)
-    const retrieval = await searchFAISS(enrichedQuery, 5, 0.15);
-    const ragContext = formatRAGContext(retrieval);
-
-    // Stage 3: Groq generation
-    const generated = await generateWithGroq(enrichedQuery, systemPrompt, ragContext);
-
-    return { processed: enrichedQuery, ragContext, generated };
+    return { processed: userQuery, ragContext: '', generated };
   } catch (error) {
-    console.error('❌ Full pipeline error:', error);
-    return { processed: userQuery, ragContext: '', generated: 'Pipeline execution failed.' };
+    console.error('❌ Pipeline error:', error);
+    return { processed: userQuery, ragContext: '', generated: 'Failed to generate response.' };
   }
 };
 

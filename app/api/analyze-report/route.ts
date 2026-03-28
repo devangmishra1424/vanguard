@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mockAnemia, mockVitaminD } from '@/lib/mockData';
 import { searchRAG, searchTestKnowledge, searchDietRecommendations, searchExerciseRecommendations, formatRAGContext, initializeRAG, executeFullPipeline } from '@/lib/ragEngine';
+// Force Vercel's Node File Trace (NFT) to include the worker in the deployment package
+// @ts-ignore
+import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+
 // pdfjs is dynamically imported in the POST handler to avoid Vercel build issues
 
 // Set function timeout for Vercel

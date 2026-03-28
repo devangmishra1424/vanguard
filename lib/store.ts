@@ -12,6 +12,22 @@ export type LabValue = {
   layman_hi?: string;
 };
 
+export type ReportSnapshot = {
+  id: string;
+  date: string;
+  labValues: LabValue[];
+  summary: string;
+  reportText: string;
+};
+
+export type DailyVital = {
+  id: string;
+  date: string;
+  type: 'BP_SYS' | 'BP_DIA' | 'HR' | 'WEIGHT';
+  value: number;
+  unit: string;
+};
+
 export type ChecklistItem = {
   id: string;
   task: string;
@@ -26,6 +42,9 @@ export type LoggedFood = {
   iron: number;
   calcium: number;
   vitaminC: number;
+  vitaminD: number;
+  vitaminB12: number;
+  folate: number;
   xpEarned: number;
   isJunk: boolean;
   timestamp: number;
@@ -59,6 +78,9 @@ export type GUCState = {
   checklist: ChecklistItem[];
   xp: number;
   level: number;
+  age: number | null;
+  reportHistory: ReportSnapshot[];
+  dailyVitals: DailyVital[];
   avatarState: 'IDLE' | 'ANALYZING' | 'HAPPY';
 
   // Daily gamification (session-only, NOT persisted)
@@ -79,6 +101,8 @@ export type GUCState = {
   addExerciseXP: (amount: number) => void;
   logFood: (food: LoggedFood) => void;
   logExercise: (exercise: LoggedExercise) => void;
+  logDailyVital: (vital: DailyVital) => void;
+  saveReportToHistory: () => void;
   resetDailyProgress: () => void;
   t: (key: string) => string;
   reset: () => void;
@@ -109,6 +133,8 @@ const initialState: Omit<
   | 'addExerciseXP'
   | 'logFood'
   | 'logExercise'
+  | 'logDailyVital'
+  | 'saveReportToHistory'
   | 'resetDailyProgress'
   | 't'
   | 'reset'
@@ -126,6 +152,9 @@ const initialState: Omit<
   checklist: [],
   xp: 0,
   level: 1,
+  age: null,
+  reportHistory: [],
+  dailyVitals: [],
   avatarState: 'IDLE',
   // Daily state — starts fresh every session
   nutritionXP: 0,
@@ -162,6 +191,27 @@ export const useStore = create<GUCState>()(
           // Ensure today is in history with zero totals if not already there
           xpHistory: ensureTodayEntry(state.xpHistory),
         })),
+
+      saveReportToHistory: () =>
+        set((state) => {
+          if (!state.reportText || state.labValues.length === 0) return state;
+          
+          // Prevent duplicate snapshots of the same report relative to its text content
+          const isDuplicate = state.reportHistory.some(h => h.reportText === state.reportText);
+          if (isDuplicate) return state;
+
+          const newSnapshot: ReportSnapshot = {
+            id: Math.random().toString(36).substring(7),
+            date: getTodayStr(),
+            labValues: state.labValues,
+            summary: state.summary,
+            reportText: state.reportText
+          };
+
+          // Limit to last 20 reports for storage efficiency
+          const newHistory = [newSnapshot, ...state.reportHistory].slice(0, 20);
+          return { reportHistory: newHistory };
+        }),
 
       toggleLanguage: () =>
         set((state) => ({ language: state.language === 'EN' ? 'HI' : 'EN' })),
@@ -224,6 +274,11 @@ export const useStore = create<GUCState>()(
         set((state) => ({
           loggedExercises: [...state.loggedExercises, exercise],
         })),
+      
+      logDailyVital: (vital) =>
+        set((state) => ({
+          dailyVitals: [vital, ...state.dailyVitals].slice(0, 50) // Keep last 50 entries
+        })),
 
       resetDailyProgress: () =>
         set({
@@ -242,13 +297,25 @@ export const useStore = create<GUCState>()(
     }),
     {
       name: 'reportraahat-v2', // Bumped version to wipe old broken localStorage state
-      // Only persist XP totals and 7-day history
-      // Daily food/exercise logs are session-only (cleared on reload/new report)
+      // Only persist essential report context and long-term history
+      // Daily logs (foods/exercises) are session-only as intended.
       partialize: (state) => ({
         language: state.language,
         xp: state.xp,
         level: state.level,
         xpHistory: state.xpHistory,
+        // Clinical Context (Persist report between reloads)
+        reportText: state.reportText,
+        summary: state.summary,
+        hindiSummary: state.hindiSummary,
+        labValues: state.labValues,
+        organFlags: state.organFlags,
+        exerciseFlags: state.exerciseFlags,
+        dietaryFlags: state.dietaryFlags,
+        jargonMap: state.jargonMap,
+        age: state.age,
+        reportHistory: state.reportHistory,
+        dailyVitals: state.dailyVitals,
       }),
     }
   )

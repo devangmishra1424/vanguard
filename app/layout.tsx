@@ -28,8 +28,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className={`${geistSans.className} bg-[#0F172A] text-slate-200`}>
+      <body className={`${geistSans.className} bg-[#0F172A] text-slate-200`} suppressHydrationWarning>
         <ErrorBoundary>
           {children}
           <Nav />

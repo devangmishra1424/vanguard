@@ -12,6 +12,8 @@ export type FoodSearchResult = {
   iron: number;
   calcium: number;
   vitaminC: number;
+  vitaminD: number;
+  vitaminB12: number;
   folate: number;
   xp: number;
   isJunk: boolean;
@@ -62,6 +64,34 @@ function isJunk(name: string): boolean {
   return JUNK_KEYWORDS.some((k) => lower.includes(k));
 }
 
+// Estimated Vitamin D (mcg) and B12 (mcg) for common foods
+// These are rough averages since the primary dataset lacks them
+const VITAMIN_LOOKUP: Record<string, { d: number, b12: number }> = {
+  'egg': { d: 2, b12: 0.6 },
+  'boiled egg': { d: 2, b12: 0.6 },
+  'omelette': { d: 2, b12: 0.6 },
+  'milk': { d: 3, b12: 1.1 },
+  'paneer': { d: 0.5, b12: 0.4 },
+  'curd': { d: 0.2, b12: 0.3 },
+  'yogurt': { d: 0.2, b12: 0.3 },
+  'fish': { d: 10, b12: 3.0 },
+  'salmon': { d: 15, b12: 4.8 },
+  'chicken': { d: 0.1, b12: 0.3 },
+  'mutton': { d: 0.1, b12: 2.5 },
+  'liver': { d: 1.2, b12: 18.0 },
+  'mushroom': { d: 2, b12: 0 },
+  'soya': { d: 0, b12: 0 },
+  'fortified milk': { d: 5, b12: 1.2 },
+};
+
+function getVitaminEstimate(name: string) {
+  const lower = name.toLowerCase();
+  for (const [key, val] of Object.entries(VITAMIN_LOOKUP)) {
+    if (lower.includes(key)) return val;
+  }
+  return { d: 0, b12: 0 };
+}
+
 function computeXP(row: Record<string, string>): number {
   const protein = parseFloat(row['Protein (g)'] || '0');
   const iron = parseFloat(row['Iron (mg)'] || '0');
@@ -106,7 +136,9 @@ export async function GET(req: NextRequest) {
       iron: parseFloat(r['Iron (mg)'] || '0'),
       calcium: parseFloat(r['Calcium (mg)'] || '0'),
       vitaminC: parseFloat(r['Vitamin C (mg)'] || '0'),
-      folate: parseFloat(r['Folate (µg)'] || '0'),
+      vitaminD: getVitaminEstimate(r['Dish Name']).d,
+      vitaminB12: getVitaminEstimate(r['Dish Name']).b12,
+      folate: parseFloat(r['Folate (µg)'] || r['Folate (µ?g)'] || '0'),
       xp: computeXP(r),
       isJunk: isJunk(r['Dish Name']),
     }));

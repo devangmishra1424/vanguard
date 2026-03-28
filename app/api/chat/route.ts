@@ -1,20 +1,20 @@
 import { NextRequest } from 'next/server';
 import Groq from 'groq-sdk';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
 export async function POST(req: NextRequest) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey === 'your_groq_api_key_here') {
+    return new Response('Error: GROQ_API_KEY is missing or invalid in .env.local', { status: 500 });
+  }
+
+  const groq = new Groq({ apiKey });
+
   try {
     const { messages, context } = await req.json();
 
     const SYSTEM_PROMPT = `
     You are Dr. Raahat, a compassionate and expert Indian health assistant and the first person of contact for the patient.
     You are helping a patient understand their lab report results.
-    
-    PATIENT CONTEXT:
-    ${JSON.stringify(context, null, 2)}
     
     GUIDELINES:
     1. Be empathetic and professional. Use simple language.
@@ -23,14 +23,16 @@ export async function POST(req: NextRequest) {
     4. Provide actionable lifestyle or dietary suggestions based on the dietaryFlags and exerciseFlags.
     5. ALWAYS include a disclaimer that you are an AI and they should consult their primary doctor.
     6. Keep responses concise but thorough.
-    7. Use Hinglish (mixture of Hindi and English) if the language preference is 'HI'.
+    7. DUAL GENERATION: You MUST provide your response in BOTH English and Hindi.
+    8. FORMAT: Start your English section with 'EN:' and your Hindi section with 'HI:'.
+    9. NO HINGLISH: The Hindi section must be in pure Hindi (Devanagari script), and the English section must be in pure English. Never mix them.
     `;
 
     const stream = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        ...messages
+        ...messages.map((m: any) => ({ role: m.role, content: m.content }))
       ],
       stream: true,
       temperature: 0.5,
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Chat API Error:', error);
-    return new Response('Error connecting to Dr. Raahat', { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(`Error connecting to Dr. Raahat: ${errorMessage}`, { status: 500 });
   }
 }

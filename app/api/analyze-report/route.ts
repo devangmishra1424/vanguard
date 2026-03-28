@@ -295,6 +295,16 @@ export async function POST(req: NextRequest) {
     const extractedFindings: { name: string; value: number; unit: string; status: 'NORMAL' | 'HIGH' | 'LOW'; layman_en: string }[] = [];
     const seenTests = new Set<string>();
 
+    let patientAge: number | null = null;
+    const allText = sortedRows.map(r => r.map(c => c.text).join(' ')).join('\n');
+    
+    // Look for Age: \d+ pattern
+    const ageMatch = allText.match(/(?:Age|AGE|Patient Age|Age \/ Sex)\s*[:\/\-]?\s*(\d+)/i);
+    if (ageMatch && ageMatch[1]) {
+      patientAge = parseInt(ageMatch[1], 10);
+      console.log('Extracted Patient Age:', patientAge);
+    }
+
     for (const row of sortedRows) {
       const rowStr = row.map(c => c.text).join(' ').toLowerCase().trim();
       if (!rowStr) continue;
@@ -620,13 +630,58 @@ export async function POST(req: NextRequest) {
     if (highs.length === 0 && lows.length === 0) summary += `All parameters within normal limits. `;
     summary += `Please discuss these results with your doctor.`;
 
+    const exerciseFlags: string[] = [];
+    const dietaryFlags: string[] = [];
+
+    const lowerHighs = highs.map((h: string) => h.toLowerCase());
+    const lowerLows = lows.map((l: string) => l.toLowerCase());
+
+    // Anemia detection
+    if (lowerLows.includes('hemoglobin') || lowerLows.includes('serum iron') || lowerLows.includes('vitamin b12')) {
+      exerciseFlags.push('ANEMIA_LIGHT');
+      dietaryFlags.push('ANEMIA_DIET');
+    }
+
+    // Liver detection
+    if (lowerHighs.includes('sgpt (alt)') || lowerHighs.includes('sgot (ast)') || lowerHighs.includes('bilirubin (total)')) {
+      exerciseFlags.push('LIVER_RESTRICTED');
+      dietaryFlags.push('LIVER_DETOX_DIET');
+    }
+
+    // Diabetes detection
+    if (lowerHighs.includes('hba1c') || lowerHighs.includes('glucose (fasting)')) {
+      exerciseFlags.push('DIABETES');
+      dietaryFlags.push('LOW_GLYCEMIC_DIET');
+    }
+
+    // Heart detection
+    if (lowerHighs.includes('total cholesterol') || lowerHighs.includes('ldl cholesterol') || lowerHighs.includes('triglycerides')) {
+      dietaryFlags.push('HEART_HEALTHY_DIET');
+    }
+
+    // Kidney detection
+    if (lowerHighs.includes('creatinine') || lowerHighs.includes('urea')) {
+      dietaryFlags.push('KIDNEY_FRIENDLY_DIET');
+    }
+
+    // Thyroid detection
+    if (lowerHighs.includes('tsh') || lowerLows.includes('tsh') || lowerHighs.includes('t3') || lowerLows.includes('t3') || lowerHighs.includes('t4') || lowerLows.includes('t4')) {
+      exerciseFlags.push('THYROID_RECOVERY');
+      dietaryFlags.push('THYROID_DIET');
+    }
+
+    // Fallbacks
+    if (exerciseFlags.length === 0) exerciseFlags.push('NORMAL_ACTIVE');
+    if (dietaryFlags.length === 0) dietaryFlags.push('NORMAL_HEALTHY');
+
     return NextResponse.json({
       summary,
+      age: patientAge,
       hindiSummary: 'रिपोर्ट का विश्लेषण पूर्ण हुआ। कृपया अपने डॉक्टर से सलाह लें।',
       labValues: finalFindings,
       organFlags,
-      exerciseFlags: ['NORMAL_ACTIVE'],
-      dietaryFlags: ['PROTEIN_RICH'],
+      exerciseFlags,
+      dietaryFlags,
       jargonMap: {},
       ai_confidence_score: confidenceScore,
       checklist,

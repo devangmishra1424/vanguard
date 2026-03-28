@@ -12,7 +12,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { messages, context, reportContext } = await req.json();
+    const { messages, context } = await req.json();
+
+    // Map the context object sent from the frontend to a readable text format for the LLM
+    const reportContext = context ? `
+Patient Summary: ${context.summary || 'None provided'}
+Patient Labs: ${context.labValues?.map((v: any) => `${v.name}: ${v.value} ${v.unit} (${v.status})`).join(', ') || 'None'}
+` : '';
 
     const SYSTEM_PROMPT = `
 You are Dr. Raahat, a medical AI assistant helping patients understand lab results.

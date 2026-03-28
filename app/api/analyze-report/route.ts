@@ -996,6 +996,9 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Analysis Pipeline Error:', error);
+    // Return mock data as fallback, but log the error for debugging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn(`⚠️ Analysis failed: ${errorMessage}. Using mock data fallback.`);
     return NextResponse.json(mockVitaminD);
   }
 }

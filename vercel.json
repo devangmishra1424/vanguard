@@ -1,0 +1,14 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "app/api/**": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "regions": ["iad1"]
+}

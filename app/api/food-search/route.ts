@@ -108,10 +108,15 @@ let cachedRows: Record<string, string>[] | null = null;
 
 function getRows(): Record<string, string>[] {
   if (cachedRows) return cachedRows;
-  const csvPath = path.join(process.cwd(), 'dataset', 'Indian_Food_Nutrition_Processed.csv');
-  const content = fs.readFileSync(csvPath, 'utf-8');
-  cachedRows = parseCSV(content);
-  return cachedRows;
+  try {
+    const csvPath = path.join(process.cwd(), 'dataset', 'Indian_Food_Nutrition_Processed.csv');
+    const content = fs.readFileSync(csvPath, 'utf-8');
+    cachedRows = parseCSV(content);
+    return cachedRows;
+  } catch (error) {
+    console.error('Failed to load CSV:', error);
+    return [];
+  }
 }
 
 export async function GET(req: NextRequest) {

@@ -40,18 +40,26 @@ const embeddingCache = new Map<string, number[]>();
 const loadFAISSFromHF = async () => {
   if (faissIndex && documents.length > 0) return;
 
-  const cacheDir = path.join(process.cwd(), '.rag-cache');
-  const indexPath = path.join(cacheDir, 'faiss_index.json');
-  const docsPath = path.join(cacheDir, 'documents.json');
+  const isServerless = process.env.VERCEL === '1' || process.env.LAMBDA_TASK_ROOT || !process.env.HOME;
 
   try {
-    // Try cache first
-    if (fs.existsSync(indexPath) && fs.existsSync(docsPath)) {
-      console.log('📦 Loading FAISS index from cache...');
-      faissIndex = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-      documents = JSON.parse(fs.readFileSync(docsPath, 'utf-8'));
-      console.log(`✅ Loaded ${documents.length} documents from cache`);
-      return;
+    // Only attempt filesystem cache in development (not serverless)
+    if (!isServerless) {
+      const cacheDir = path.join(process.cwd(), '.rag-cache');
+      const indexPath = path.join(cacheDir, 'faiss_index.json');
+      const docsPath = path.join(cacheDir, 'documents.json');
+
+      try {
+        if (fs.existsSync(indexPath) && fs.existsSync(docsPath)) {
+          console.log('📦 Loading FAISS index from cache...');
+          faissIndex = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+          documents = JSON.parse(fs.readFileSync(docsPath, 'utf-8'));
+          console.log(`✅ Loaded ${documents.length} documents from cache`);
+          return;
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ Cache read failed, skipping:', (cacheError as Error).message);
+      }
     }
 
     // Try downloading from HF dataset
@@ -79,10 +87,17 @@ const loadFAISSFromHF = async () => {
     faissIndex = data.faiss_index || {};
     documents = data.documents || [];
 
-    // Cache for next run
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(indexPath, JSON.stringify(faissIndex));
-    fs.writeFileSync(docsPath, JSON.stringify(documents));
+    // Cache for next run (only in development)
+    if (!isServerless) {
+      try {
+        const cacheDir = path.join(process.cwd(), '.rag-cache');
+        if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+        fs.writeFileSync(path.join(cacheDir, 'faiss_index.json'), JSON.stringify(faissIndex));
+        fs.writeFileSync(path.join(cacheDir, 'documents.json'), JSON.stringify(documents));
+      } catch (writeError) {
+        console.warn('⚠️ Cache write failed (expected in serverless):', (writeError as Error).message);
+      }
+    }
 
     console.log(`✅ Loaded ${documents.length} documents from HF dataset`);
   } catch (error) {

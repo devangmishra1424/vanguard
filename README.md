@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/activity.svg" alt="ReportRaahat Logo" width="80" height="80">
-  <h1 align="center">ReportRaahat</h1>
+  <img src="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/activity.svg" alt="Vanguard Logo" width="80" height="80">
+  <h1 align="center">Vanguard</h1>
   <p align="center">
     <strong>Transforming complex medical reports into a gamified, personalized health journey.</strong>
   </p>
@@ -10,7 +10,7 @@
 
 ## 🎯 The Vision & Project Status
 
-Our mission with ReportRaahat is to build a comprehensive engine consisting of 5 core modules. **We are incredibly close to completion**, with the vast majority of the core engine and UI fully operational.
+Our mission with Vanguard is to build a comprehensive engine consisting of 5 core modules. **We are incredibly close to completion**, with the vast majority of the core engine and UI fully operational.
 
 Here is the exact breakdown of our current progress:
 
@@ -37,7 +37,7 @@ Here is the exact breakdown of our current progress:
 ### ✅ Module 5: Gamified Health Avatar
 *XP system, health bar, visual progression.*
 - **Status: COMPLETED**
-- **Details:** Driven by a robust `Zustand` persistence state architecture (`reportraahat-v2`), the application successfully isolates session-based daily progress from long-term XP history. Gamification includes dynamic levelling, an avatar progression interface, micro-animations (confetti), and a responsive 7-day XP chart.
+- **Details:** Driven by a robust `Zustand` persistence state architecture (`vanguard-v2`), the application successfully isolates session-based daily progress from long-term XP history. Gamification includes dynamic levelling, an avatar progression interface, micro-animations (confetti), and a responsive 7-day XP chart.
 
 ---
 
@@ -58,7 +58,7 @@ To run the platform locally:
 git clone https://github.com/devangmishra1424/vanguard.git
 
 # 2. Enter directory
-cd reportraahat
+cd vanguard
 
 # 3. Install dependencies
 npm install

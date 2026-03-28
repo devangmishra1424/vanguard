@@ -296,7 +296,7 @@ export const useStore = create<GUCState>()(
       reset: () => set(initialState),
     }),
     {
-      name: 'reportraahat-v2', // Bumped version to wipe old broken localStorage state
+      name: 'vanguard-v2', // Bumped version to wipe old broken localStorage state
       // Only persist essential report context and long-term history
       // Daily logs (foods/exercises) are session-only as intended.
       partialize: (state) => ({

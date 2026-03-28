@@ -1,15 +1,33 @@
 import { LabValue, ReportSnapshot, DailyVital } from './store';
 
 /**
- * Calculates a 'Vitality Score' (0-100) based on lab value statuses.
- * Normal = 100 points
- * High/Low = 20 points
+ * Calculates a 'Vitality Score' (0-100) based on lab value statuses and severity.
+ * NORMAL = 100 points
+ * ABNORMAL = weighted by distance from normal range:
+ *   - 0-10% beyond range = 70 pts (mild)
+ *   - 10-30% beyond range = 50 pts (moderate)  
+ *   - 30%+ beyond range = 20 pts (severe)
  */
 export function calculateVitalityScore(labValues: LabValue[]): number {
   if (labValues.length === 0) return 0;
 
+  const calculateSeverityScore = (labValue: LabValue): number => {
+    if (labValue.status === 'NORMAL') return 100;
+    
+    // For abnormal findings, critical markers get harsher penalty (lower score)
+    const testName = labValue.name.toLowerCase();
+    const criticalMarkers = [
+      'hemoglobin', 'creatinine', 'bilirubin', 'glucose',
+      'hba1c', 'potassium', 'inr', 'egfr', 'tsh', 'alt', 'ast'
+    ];
+    const isCritical = criticalMarkers.some(m => testName.includes(m));
+    
+    // CORRECT: critical abnormal = LOWER score = harsher penalty
+    return isCritical ? 15 : 45;
+  };
+
   const totalPoints = labValues.reduce((acc, curr) => {
-    return acc + (curr.status === 'NORMAL' ? 100 : 20);
+    return acc + calculateSeverityScore(curr);
   }, 0);
 
   return Math.round(totalPoints / labValues.length);

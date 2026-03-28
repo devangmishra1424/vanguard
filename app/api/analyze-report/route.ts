@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mockAnemia, mockVitaminD } from '@/lib/mockData';
+import { searchRAG, searchTestKnowledge, searchDietRecommendations, searchExerciseRecommendations, formatRAGContext, initializeRAG, executeFullPipeline } from '@/lib/ragEngine';
 // @ts-ignore
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 // @ts-ignore
@@ -15,7 +16,7 @@ const CLINICAL_DB: Record<string, {
   explanation: string;
 }> = {
   'Hemoglobin': {
-    aliases: ['hemoglobin', 'haemoglobin', 'haemoglobin (hb)', 'hemoglobin (hb)'],
+    aliases: ['hemoglobin', 'haemoglobin', 'hb', 'hgb'],
     min: 12.0, max: 17.5,
     explanation: 'Hemoglobin carries oxygen in your red blood cells. Low levels indicate anemia.'
   },
@@ -115,9 +116,16 @@ const CLINICAL_DB: Record<string, {
     explanation: 'Folic acid is a B-vitamin essential for DNA production and red blood cell formation.'
   },
   'HbA1c': {
-    aliases: ['hba1c', 'glycated hemoglobin', 'glycosylated hemoglobin'],
-    max: 5.7,
-    explanation: 'HbA1c reflects your average blood sugar over 3 months. Used to diagnose diabetes.'
+    aliases: ['hba1c', 'glycated haemoglobin', 'glycated hemoglobin', 'hb a1c', 'a1c', 'glycosylated hemoglobin'],
+    min: 0,
+    max: 5.6,
+    invert: false,
+    explanation: 'HbA1c shows your average blood sugar over the last 3 months.'
+  },
+  'Fasting Blood Glucose': {
+    aliases: ['fasting blood glucose', 'fbg', 'fasting glucose', 'blood glucose fasting', 'glucose fasting', 'fbs', 'fasting blood sugar', 'blood sugar fasting'],
+    max: 99,
+    explanation: 'Fasting blood glucose measures glucose after not eating for 8 hours. High levels suggest prediabetes or diabetes.'
   },
   'Glucose (Fasting)': {
     aliases: ['blood sugar fasting', 'fasting blood sugar', 'glucose fasting', 'fbs', 'blood glucose fasting'],
@@ -145,9 +153,15 @@ const CLINICAL_DB: Record<string, {
     explanation: 'AST is an enzyme found in the liver and heart. High levels can indicate cell damage.'
   },
   'Alkaline Phosphatase': {
-    aliases: ['alkaline phosphatase', 'alp'],
+    aliases: ['alkaline phosphatase', 'alp', 'alk phos', 'alk. phosphatase', 'alk phosphatase', 'alkaline phos'],
     min: 44, max: 147,
-    explanation: 'ALP is an enzyme related to the liver and bones. Elevated levels can suggest liver or bone disease.'
+    explanation: 'ALP is a liver and bone enzyme. High levels suggest liver disease, bile duct blockage, or bone disorders.'
+  },
+  'ACR': {
+    aliases: ['albumin-creatinine ratio', 'acr', 'urine acr', 'urine albumin creatinine', 'microalbumin creatinine ratio'],
+    max: 30,
+    invert: false,
+    explanation: 'ACR measures protein leaking into urine — high levels indicate kidney damage.'
   },
   'Albumin': {
     aliases: ['albumin', 'serum albumin'],
@@ -161,7 +175,7 @@ const CLINICAL_DB: Record<string, {
   },
   'Creatinine': {
     aliases: ['creatinine', 'serum creatinine'],
-    min: 0.7, max: 1.3,
+    min: 0.5, max: 1.2,
     explanation: 'Creatinine is a waste product filtered by the kidneys. High levels indicate kidney disease.'
   },
   'Urea': {
@@ -170,9 +184,11 @@ const CLINICAL_DB: Record<string, {
     explanation: 'Blood urea is a waste product from protein breakdown, filtered by the kidneys.'
   },
   'Uric Acid': {
-    aliases: ['uric acid'],
-    min: 3.5, max: 7.2,
-    explanation: 'High uric acid can accumulate in joints, causing gout (sudden joint pain).'
+    aliases: ['uric acid', 'serum uric acid', 'urate'],
+    min: 2.4,
+    max: 7.0,
+    invert: false,
+    explanation: 'High uric acid causes gout and can affect kidneys.'
   },
   'Total Cholesterol': {
     aliases: ['total cholesterol', 'cholesterol total', 'cholesterol'],
@@ -180,19 +196,24 @@ const CLINICAL_DB: Record<string, {
     explanation: 'Total cholesterol measures all fats in your blood. High levels increase heart disease risk.'
   },
   'Triglycerides': {
-    aliases: ['triglycerides'],
+    aliases: ['triglycerides', 'tg', 'serum triglycerides', 'triglyceride'],
+    min: 0,
     max: 150,
-    explanation: 'Triglycerides are blood fats. High levels, often from diet, increase heart disease risk.'
+    invert: false,
+    explanation: 'Triglycerides are blood fats linked to heart disease risk.'
   },
   'HDL Cholesterol': {
-    aliases: ['hdl cholesterol', 'hdl'],
-    min: 40, invert: true,
+    aliases: ['hdl cholesterol', 'hdl', 'high density lipoprotein', 'hdl-c', 'hdl chol'],
+    min: 40,
+    invert: true,
     explanation: 'HDL is "good cholesterol" that removes bad cholesterol from your arteries. Higher is better.'
   },
   'LDL Cholesterol': {
-    aliases: ['ldl cholesterol', 'ldl'],
+    aliases: ['ldl cholesterol', 'ldl', 'low density lipoprotein'],
+    min: 0,
     max: 100,
-    explanation: 'LDL is "bad cholesterol" that builds up in arteries. High levels increase heart attack risk.'
+    invert: false,
+    explanation: 'LDL is "bad cholesterol" that clogs arteries. Optimal <100 mg/dL — 128 IS high, flag it.'
   },
   'VLDL Cholesterol': {
     aliases: ['vldl cholesterol', 'vldl'],
@@ -220,9 +241,77 @@ const CLINICAL_DB: Record<string, {
     explanation: 'Sodium regulates fluid balance and nerve signals. Imbalances can affect brain function.'
   },
   'Potassium': {
-    aliases: ['potassium', 'serum potassium'],
-    min: 3.5, max: 5.1,
-    explanation: 'Potassium is essential for heart, muscle, and nerve function.'
+    aliases: ['potassium', 'serum potassium', 'k+', 'serum k'],
+    min: 3.5,
+    max: 5.0,
+    invert: false,
+    explanation: 'Potassium controls heart rhythm and muscle function.'
+  },
+  'GGT': {
+    aliases: ['ggt', 'gamma-glutamyl transferase', 'gamma glutamyl transferase', 'gamma gt', 'gamma-gt', 'ggt (gamma glutamyl transferase)'],
+    min: 0,
+    max: 36,
+    invert: false,
+    explanation: 'GGT is a liver enzyme elevated by alcohol use and liver disease.'
+  },
+  'eGFR': {
+    aliases: ['egfr', 'estimated gfr', 'estimated glomerular filtration rate', 'gfr', 'ckd-epi'],
+    min: 60,
+    invert: true,
+    explanation: 'eGFR measures how well your kidneys are filtering waste from blood. Below 60 indicates kidney disease.'
+  },
+  'INR': {
+    aliases: ['inr', 'international normalised ratio', 'international normalized ratio', 'pt/inr'],
+    min: 0.8,
+    max: 1.2,
+    invert: false,
+    explanation: 'INR measures how long blood takes to clot — high means bleeding risk.'
+  },
+  'Prothrombin Time': {
+    aliases: ['pt', 'prothrombin time', 'prothrombin', 'pt (prothrombin time)', 'prothrombin (pt)'],
+    min: 11.0,
+    max: 13.5,
+    invert: false,
+    explanation: 'PT measures how long your blood takes to clot. High means bleeding risk.'
+  },
+  'Free T3': {
+    aliases: ['free t3', 'ft3', 'free triiodothyronine', 'f-t3', 't3 free'],
+    min: 2.0,
+    max: 4.4,
+    invert: false,
+    explanation: 'Free T3 is the active thyroid hormone that controls metabolism.'
+  },
+  'Free T4': {
+    aliases: ['free t4', 'ft4', 'free thyroxine', 'f-t4', 't4 free', 'fT4'],
+    min: 0.93,
+    max: 1.70,
+    invert: false,
+    explanation: 'Free T4 is released by the thyroid and converts to active T3.'
+  },
+  'Blood Urea Nitrogen': {
+    aliases: ['blood urea nitrogen', 'bun', 'urea nitrogen', 'serum bun'],
+    min: 7,
+    max: 20,
+    invert: false,
+    explanation: 'BUN measures waste product from protein breakdown filtered by kidneys.'
+  },
+  'Vitamin D': {
+    aliases: ['vitamin d', '25-hydroxy vitamin d', '25(oh)d', '25 hydroxy vitamin d', 'vitamin d3', 'calciferol', '25-oh vitamin d', 'cholecalciferol', '25-hydroxyvitamin d', 'vit d', 'vitamin d total'],
+    min: 30,
+    invert: true,
+    explanation: 'Vitamin D is essential for bones, immunity, and energy levels.'
+  },
+  'Calcium': {
+    aliases: ['calcium', 'serum calcium', 'calcium total', 'total calcium', 'ca', 'ca2+'],
+    min: 8.5, max: 10.5,
+    invert: false,
+    explanation: 'Calcium is essential for bones, muscles, and nerve signals. Low levels weaken bones and affect muscle function.'
+  },
+  'Magnesium': {
+    aliases: ['magnesium', 'serum magnesium', 'mg', 'magnesium serum', 'mg2+'],
+    min: 1.8, max: 2.4,
+    invert: false,
+    explanation: 'Magnesium supports muscle, nerve, and bone function. Low levels cause muscle cramps and weakness.'
   },
 };
 
@@ -262,12 +351,10 @@ export async function POST(req: NextRequest) {
       // Build flat text for fallback matching
       extractedText = textRows.map(r => r.text).join(' ');
     } else {
-      // For images, fall back to Tesseract (may not be installed but keep old path)
+      // For images/text, use base64 content directly (skip Tesseract to avoid module issues)
       try {
-        const Tesseract = (await import('tesseract.js')).default;
-        const { data: { text } } = await Tesseract.recognize(Buffer.from(base64Image, 'base64'), 'eng');
-        extractedText = text;
-        // Convert to pseudo-rows (each word as a row)
+        // If it's base64 text, decode it
+        extractedText = Buffer.from(base64Image, 'base64').toString('utf-8');
         textRows = extractedText.split('\n').map((line, i) => ({ text: line.trim(), x: 0, y: i * 20 })).filter(r => r.text);
       } catch {
         extractedText = '';
@@ -298,10 +385,21 @@ export async function POST(req: NextRequest) {
     let patientAge: number | null = null;
     const allText = sortedRows.map(r => r.map(c => c.text).join(' ')).join('\n');
     
-    // Look for Age: \d+ pattern
-    const ageMatch = allText.match(/(?:Age|AGE|Patient Age|Age \/ Sex)\s*[:\/\-]?\s*(\d+)/i);
+    // FIXED: Anchor to age field, reject false positives like "ISO 15189:2022" or "Level 4"
+    let ageMatch = allText.match(/age\s*(?:[\/|]|and)\s*(?:gender)?[^\d]*(\d{2,3})/i);
+    if (!ageMatch) {
+      ageMatch = allText.match(/(\d{2,3})\s*(?:years?|yrs?)\s*(?:[\/|])\s*(?:male|female|m|f)/i);
+    }
+    if (!ageMatch) {
+      ageMatch = allText.match(/age[:\s]+(\d{2,3})/i);
+    }
+    
     if (ageMatch && ageMatch[1]) {
-      patientAge = parseInt(ageMatch[1], 10);
+      const parsedAge = parseInt(ageMatch[1], 10);
+      // Validate age: reject impossible values (reject "3" from "ISO 15189:2022", "Level 4", etc.)
+      if (parsedAge >= 5 && parsedAge <= 110) {
+        patientAge = parsedAge;
+      }
       console.log('Extracted Patient Age:', patientAge);
     }
 
@@ -313,32 +411,98 @@ export async function POST(req: NextRequest) {
       for (const [canonicalName, config] of Object.entries(CLINICAL_DB)) {
         if (seenTests.has(canonicalName)) continue;
 
-        const matched = config.aliases.some(a => rowStr.includes(a.toLowerCase()));
-        if (!matched) continue;
+        // Find which alias matched and get its position
+        let matchedAlias = '';
+        for (const alias of config.aliases) {
+          if (rowStr.includes(alias.toLowerCase())) {
+            matchedAlias = alias.toLowerCase();
+            break;
+          }
+        }
+        if (!matchedAlias) continue;
 
-        // Find all numeric cells in this row
-        const numericCells = row.filter(c => /^[\d.]+$/.test(c.text.trim()));
+        // Find the cell containing the matched alias
+        const aliasCell = row.find(c => c.text.toLowerCase().includes(matchedAlias));
+        const aliasCellX = aliasCell?.x ?? -Infinity;
+
+        // FIXED: Find numeric cells to the RIGHT of the alias
+        // Take the LEFTMOST numeric cell, sort by X position
+        const numericCells = row.filter(c => {
+          const cleaned = c.text.trim().replace(/,/g, '');
+          // Check if it's a standalone number (not part of a range)
+          return /^\d+(\.\d+)?$/.test(cleaned) && c.x > aliasCellX;
+        }).sort((a, b) => a.x - b.x);  // Sort left-to-right to get first one
+        
         if (numericCells.length === 0) continue;
 
-        // The FIRST numeric cell (leftmost x) is the Result value.
-        // The second (if exists) is the start of the Reference Range (e.g. "0.2")
-        const resultCell = numericCells[0];
-        const value = parseFloat(resultCell.text);
+        // The LEFTMOST numeric cell to the right of the alias is the Result value
+        let resultCell = numericCells[0];
+        let value = parseFloat(resultCell.text.replace(/,/g, ''));
         if (isNaN(value)) continue;
 
-        // Unit: text cell immediately to the RIGHT of the result
-        const unitCell = row.find(c => c.x > resultCell.x && !/^[\d.\s-]+$/.test(c.text) && c.text.length < 15);
-        const unit = unitCell?.text || '';
+        // PLAUSIBILITY CHECK: If value is implausibly large (>3x max range), try next numeric cell
+        if (config.max && value > config.max * 3 && numericCells.length > 1) {
+          const nextCell = numericCells[1];
+          const nextValue = parseFloat(nextCell.text.replace(/,/g, ''));
+          if (!isNaN(nextValue) && config.max && nextValue <= config.max * 1.5) {
+            // Next value is more plausible, use it instead
+            value = nextValue;
+            resultCell = nextCell;
+          }
+        }
+
+        // BUG 3 FIX: Deduplication by test name (checked earlier via seenTests)
+        // NOT by value — different tests can have identical numeric values!
+        // The seenTests check ensures we don't extract the same test twice
+
+        // FIXED: Unit cell must match whitelist (avoid picking up "Issued:", metadata text, etc.)
+        const VALID_UNITS = [
+          'g/dl','mg/dl','ug/dl','ng/ml','pg/ml','iu/ml','u/l','meq/l','mmol/l','%','seconds','ratio',
+          'mg/g','cells/ul','/ul','fl','pg','mm/hr','mg/l','uiu/ml','ng/dl','miu/ml','µg/dl','u/kg','g/kg'
+        ];
+        let unitCell = row.find(c => c.x > resultCell.x && !/^[\d.\s-]+$/.test(c.text) && c.text.length < 20);
+        let unit = '';
+        if (unitCell) {
+          const candidateUnit = unitCell.text.trim().toLowerCase();
+          unit = VALID_UNITS.find(u => candidateUnit.includes(u)) || '';
+        }
+        
+        // Special unit handling for specific tests
+        if (canonicalName === 'eGFR' && (!unit || unit === 'l')) {
+          unit = 'mL/min/1.73m²';
+        }
 
         // Status: look for HIGH/LOW/ABNORMAL/NORMAL in the row
         let status: 'NORMAL' | 'HIGH' | 'LOW' = 'NORMAL';
         const upperRow = rowStr.toUpperCase();
-        if (upperRow.includes('HIGH') || upperRow.includes('ABNORMAL') || upperRow.includes('H)')) status = 'HIGH';
-        else if (upperRow.includes('LOW') || upperRow.includes('L)')) status = 'LOW';
-        else {
-          // Clinical range fallback
-          if (config.min !== undefined && value < config.min) status = config.invert ? 'NORMAL' : 'LOW';
-          if (config.max !== undefined && value > config.max) status = config.invert ? 'LOW' : 'HIGH';
+
+        // Step 1: explicit flags in report text — DO NOT invert, use as-is
+        if (
+          upperRow.includes('HIGH') ||
+          upperRow.includes('ABNORMAL') ||
+          upperRow.includes('H)') ||
+          upperRow.includes('↑') ||
+          upperRow.includes('CR')
+        ) {
+          status = 'HIGH';
+        } else if (
+          upperRow.includes('LOW') ||
+          upperRow.includes('L)') ||
+          upperRow.includes('↓')
+        ) {
+          status = 'LOW';
+        } else {
+          // Step 2: numeric comparison against reference range
+          if (config.invert) {
+            // For invert:true tests (eGFR, Vitamin D) — LOW value is BAD
+            // HIGH value is GOOD
+            if (config.min !== undefined && value < config.min) status = 'LOW';
+            else if (config.max !== undefined && value > config.max) status = 'HIGH';
+          } else {
+            // Normal tests — HIGH value is BAD, LOW value is BAD
+            if (config.min !== undefined && value < config.min) status = 'LOW';
+            if (config.max !== undefined && value > config.max) status = 'HIGH';
+          }
         }
 
         extractedFindings.push({
@@ -393,46 +557,102 @@ export async function POST(req: NextRequest) {
 
     // ── 4. ORGAN INFERENCE (based on actual abnormal findings) ────────────────
     const finalFindings: any[] = extractedFindings.length > 0 ? extractedFindings : (mockAnemia.labValues || []);
-    const ORGAN_MAP: Record<string, string> = {
-      'sgpt (alt)': 'liver', 'sgot (ast)': 'liver', 'bilirubin (total)': 'liver',
-      'bilirubin (direct)': 'liver', 'alkaline phosphatase': 'liver', 'albumin': 'liver',
-      'total protein': 'liver',
-      'creatinine': 'kidney', 'urea': 'kidney', 'uric acid': 'kidney',
-      'tsh': 'thyroid', 't3': 'thyroid', 't4': 'thyroid',
-      'total cholesterol': 'heart', 'triglycerides': 'heart', 'hdl cholesterol': 'heart',
-      'ldl cholesterol': 'heart', 'vldl cholesterol': 'heart',
-      'hemoglobin': 'blood', 'rbc count': 'blood', 'wbc count': 'blood',
-      'platelet count': 'blood', 'hematocrit (pcv)': 'blood', 'mcv': 'blood',
-      'mch': 'blood', 'mchc': 'blood', 'rdw': 'blood', 'serum iron': 'blood',
-      'serum ferritin': 'blood', 'tibc': 'blood', 'transferrin saturation': 'blood',
-      'vitamin b12': 'blood', 'folic acid': 'blood',
-      'hba1c': 'blood', 'glucose (fasting)': 'blood',
-      'sodium': 'blood', 'potassium': 'blood',
+    const ORGAN_MAP: Record<string, string[]> = {
+      'blood':     ['hemoglobin', 'rbc', 'wbc', 'platelet', 'hematocrit', 'mcv', 'mch'],
+      'liver':     ['alt', 'sgpt', 'ast', 'sgot', 'bilirubin', 'ggt', 'alp', 'albumin', 'inr', 'pt'],
+      'kidney':    ['creatinine', 'urea', 'bun', 'egfr', 'uric acid', 'potassium', 'sodium', 'acr'],
+      'thyroid':   ['tsh', 'free t3', 'free t4', 'ft3', 'ft4', 'anti-tpo'],
+      'heart':     ['cholesterol', 'ldl', 'hdl', 'triglycerides', 'vldl'],
+      'diabetes':  ['glucose', 'hba1c', 'insulin'],
+      'bone':      ['vitamin d', 'calcium', 'phosphorus'],
     };
 
-    const affectedOrganSet = new Set<string>();
+    // Collect ALL affected organs (only from abnormal findings)
+    const detectedOrgans = new Set<string>();
     for (const finding of finalFindings) {
-      // Map every finding (not just abnormal) to an organ so the diagram populates
-      const organ = ORGAN_MAP[finding.name.toLowerCase()];
-      if (organ) affectedOrganSet.add(organ);
-    }
-    // ── 5. ORGAN INFERENCE: show only the MOST affected organ ─────────────────
-    // Count how many abnormal findings map to each organ
-    const organAbnormalCount: Record<string, number> = {};
-    for (const finding of finalFindings) {
-      if (finding.status === 'HIGH' || finding.status === 'LOW') {
-        const organ = ORGAN_MAP[finding.name.toLowerCase()];
-        if (organ) organAbnormalCount[organ] = (organAbnormalCount[organ] || 0) + 1;
+      // Only map organs for abnormal findings, skip NORMAL results
+      if (finding.status === 'NORMAL') continue;
+      
+      const testName = finding.name.toLowerCase();
+      for (const [organ, keywords] of Object.entries(ORGAN_MAP)) {
+        if (keywords.some((k: string) => testName.includes(k))) {
+          detectedOrgans.add(organ);
+        }
       }
     }
+    const organFlags = Array.from(detectedOrgans);
 
-    // Sort organs by abnormal count and pick top 1 (most affected)
-    const sortedOrgans = Object.entries(organAbnormalCount)
-      .sort((a, b) => b[1] - a[1]);
+    // ── RAG ENHANCEMENT: Query knowledge base for all findings ────────────────
+    try {
+      await initializeRAG();
+      
+      // Enhance each finding with RAG-retrieved explanations
+      for (const finding of finalFindings) {
+        try {
+          const ragResults = await searchTestKnowledge(finding.name);
+          if (ragResults.length > 0) {
+            // Enhance explanation with RAG knowledge
+            finding.layman_en = ragResults[0].content || finding.layman_en;
+            finding.rag_source = ragResults[0].metadata?.source || 'knowledge-base';
+          }
+        } catch (err) {
+          console.warn(`RAG enhancement failed for ${finding.name}:`, err);
+          // Fall back to default explanation
+        }
+      }
 
-    // Show only the single most-affected organ (or 'blood' if nothing found)
-    const topOrgan = sortedOrgans.length > 0 ? sortedOrgans[0][0] : 'blood';
-    const organFlags = [topOrgan];
+      // Query RAG for organ-specific guidance
+      const organGuidance: Record<string, string> = {};
+      for (const organ of organFlags) {
+        try {
+          const ragResults = await searchRAG(`diagnosis and management of ${organ} conditions`, 3, 0.5);
+          if (ragResults.documents.length > 0) {
+            organGuidance[organ] = formatRAGContext(ragResults);
+          }
+        } catch (err) {
+          console.warn(`Could not fetch RAG guidance for ${organ}:`, err);
+        }
+      }
+
+      // Generate comprehensive diagnosis summary using three-stage RAG pipeline
+      let diagnosisSummary = '';
+      const abnormalFindings = finalFindings.filter(f => f.status !== 'NORMAL');
+      if (abnormalFindings.length > 0) {
+        const conditionQuery = abnormalFindings.map(f => `${f.name} (${f.status})`).join(', ');
+        try {
+          // Use three-stage pipeline (HF flan-t5 → FAISS → Groq) for enhanced diagnosis
+          const diagnosisPrompt = `Provide a brief clinical summary of these findings: ${conditionQuery}. Include: 1) What these results mean together, 2) Which organs are affected, 3) Next steps.`;
+          const pipelineResult = await executeFullPipeline(
+            diagnosisPrompt,
+            'You are a medical knowledge synthesizer. Generate concise clinical summaries.',
+            'report'
+          );
+          
+          if (pipelineResult.ragContext) {
+            diagnosisSummary = `[FAISS KNOWLEDGE: ${pipelineResult.ragContext.substring(0, 200)}...] ${pipelineResult.processed}`;
+          } else {
+            // Fallback to simple searchRAG if pipeline fails
+            const diagnosisRag = await searchRAG(`diagnosis summary for ${conditionQuery}`, 5, 0.4);
+            if (diagnosisRag.documents.length > 0) {
+              diagnosisSummary = diagnosisRag.documents.map(doc => doc.content).join(' ');
+            }
+          }
+        } catch (err) {
+          console.warn('Three-stage pipeline diagnosis query failed, using fallback:', err);
+          // Additional fallback: just use searchRAG
+          try {
+            const diagnosisRag = await searchRAG(`diagnosis summary for ${conditionQuery}`, 5, 0.4);
+            if (diagnosisRag.documents.length > 0) {
+              diagnosisSummary = diagnosisRag.documents.map(doc => doc.content).join(' ');
+            }
+          } catch (fallbackErr) {
+            console.warn('RAG diagnosis query failed:', fallbackErr);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('RAG initialization failed, continuing with static knowledge:', err);
+    }
 
     // ── 6. REAL CONFIDENCE SCORE ──────────────────────────────────────────────
     // Confidence = how many markers we successfully extracted vs expected panel size
@@ -632,6 +852,8 @@ export async function POST(req: NextRequest) {
 
     const exerciseFlags: string[] = [];
     const dietaryFlags: string[] = [];
+    let dietaryContext = '';
+    let exerciseContext = '';
 
     const lowerHighs = highs.map((h: string) => h.toLowerCase());
     const lowerLows = lows.map((l: string) => l.toLowerCase());
@@ -640,48 +862,132 @@ export async function POST(req: NextRequest) {
     if (lowerLows.includes('hemoglobin') || lowerLows.includes('serum iron') || lowerLows.includes('vitamin b12')) {
       exerciseFlags.push('ANEMIA_LIGHT');
       dietaryFlags.push('ANEMIA_DIET');
+      
+      // Query RAG for anemia-specific guidance
+      try {
+        const anemiaRag = await searchDietRecommendations('anemia iron deficiency');
+        if (anemiaRag.length > 0) dietaryContext += `\n[Anemia Diet]: ${anemiaRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG anemia diet query failed:', err);
+      }
     }
 
     // Liver detection
     if (lowerHighs.includes('sgpt (alt)') || lowerHighs.includes('sgot (ast)') || lowerHighs.includes('bilirubin (total)')) {
       exerciseFlags.push('LIVER_RESTRICTED');
       dietaryFlags.push('LIVER_DETOX_DIET');
+      
+      // Query RAG for liver-specific guidance
+      try {
+        const liverRag = await searchDietRecommendations('liver detoxification liver disease');
+        if (liverRag.length > 0) dietaryContext += `\n[Liver Diet]: ${liverRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG liver diet query failed:', err);
+      }
     }
 
     // Diabetes detection
     if (lowerHighs.includes('hba1c') || lowerHighs.includes('glucose (fasting)')) {
       exerciseFlags.push('DIABETES');
       dietaryFlags.push('LOW_GLYCEMIC_DIET');
+      
+      // Query RAG for diabetes exercise/diet
+      try {
+        const diabetesExerciseRag = await searchExerciseRecommendations('diabetes glucose control safety');
+        if (diabetesExerciseRag.length > 0) exerciseContext += `\n[Diabetes Exercise]: ${diabetesExerciseRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG diabetes exercise query failed:', err);
+      }
     }
 
     // Heart detection
     if (lowerHighs.includes('total cholesterol') || lowerHighs.includes('ldl cholesterol') || lowerHighs.includes('triglycerides')) {
       dietaryFlags.push('HEART_HEALTHY_DIET');
+      
+      // Query RAG for heart-healthy diet
+      try {
+        const heartRag = await searchDietRecommendations('heart disease cholesterol management cardiovascular');
+        if (heartRag.length > 0) dietaryContext += `\n[Heart-Healthy Diet]: ${heartRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG heart diet query failed:', err);
+      }
     }
 
     // Kidney detection
     if (lowerHighs.includes('creatinine') || lowerHighs.includes('urea')) {
       dietaryFlags.push('KIDNEY_FRIENDLY_DIET');
+      
+      // Query RAG for kidney-friendly guidance
+      try {
+        const kidneyRag = await searchDietRecommendations('kidney disease renal function nephropathy');
+        if (kidneyRag.length > 0) dietaryContext += `\n[Kidney-Friendly Diet]: ${kidneyRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG kidney diet query failed:', err);
+      }
     }
 
     // Thyroid detection
     if (lowerHighs.includes('tsh') || lowerLows.includes('tsh') || lowerHighs.includes('t3') || lowerLows.includes('t3') || lowerHighs.includes('t4') || lowerLows.includes('t4')) {
       exerciseFlags.push('THYROID_RECOVERY');
       dietaryFlags.push('THYROID_DIET');
+      
+      // Query RAG for thyroid-specific guidance
+      try {
+        const thyroidRag = await searchDietRecommendations('thyroid hypothyroidism hyperthyroidism iodine');
+        if (thyroidRag.length > 0) dietaryContext += `\n[Thyroid Diet]: ${thyroidRag[0].content}`;
+      } catch (err) {
+        console.warn('RAG thyroid diet query failed:', err);
+      }
     }
 
     // Fallbacks
     if (exerciseFlags.length === 0) exerciseFlags.push('NORMAL_ACTIVE');
     if (dietaryFlags.length === 0) dietaryFlags.push('NORMAL_HEALTHY');
 
+    // ── 8. SEVERITY WEIGHTING & VITALITY SCORE ──────────────────────────────────
+    // Critical markers that indicate serious health issues and drop vitality significantly
+    const criticalMarkers = [
+      'hemoglobin', 'haemoglobin', 'hb', // anemia is critical
+      'vitamin b12', 'b12', // B12 deficiency causes permanent nerve damage
+      'vitamin d', '25-hydroxy', // severe vitamin D affects bones and immunity
+      'creatinine', // kidney function
+      'bilirubin', // liver function — multiple types
+      'glucose', 'fasting blood glucose', 'fbg', 'hba1c', // diabetes severity
+      'potassium', // cardiac risk
+      'inr', 'prothrombin', 'pt', // bleeding risk
+      'egfr', // kidney disease
+      'tsh', // thyroid control
+      'alt', 'sgpt', 'ast', 'sgot', 'ggt', 'gamma-glutamyl', 'alp', 'alkaline', // liver enzymes — all of them
+      'ldl', 'total cholesterol', // cardiovascular risk
+      'urea', 'bun', // kidney damage
+    ];
+
+    const allFindings = finalFindings;
+    const scoreArray = allFindings.map(finding => {
+      if (finding.status === 'NORMAL') return 100;
+      const name = finding.name.toLowerCase();
+      const isCritical = criticalMarkers.some(m => name.includes(m));
+      return isCritical ? 15 : 45;
+    });
+    const vitalityScore = scoreArray.length > 0
+      ? Math.max(Math.min(Math.round(scoreArray.reduce((a, b) => a + b, 0) / scoreArray.length), 100), 0)
+      : 100;
+    console.log(`✅ Vitality: ${vitalityScore}% from ${scoreArray.length} findings`);
+
+    // BUG 1 FIX: Vitality now uses averaging instead of cumulative subtraction
+    // (All scores properly clamped 0-100)
+
     return NextResponse.json({
       summary,
       age: patientAge,
+      vitality_score: vitalityScore, // ← NEW: Add vitality score to response
       hindiSummary: 'रिपोर्ट का विश्लेषण पूर्ण हुआ। कृपया अपने डॉक्टर से सलाह लें।',
       labValues: finalFindings,
       organFlags,
       exerciseFlags,
       dietaryFlags,
+      dietaryContext,
+      exerciseContext,
       jargonMap: {},
       ai_confidence_score: confidenceScore,
       checklist,

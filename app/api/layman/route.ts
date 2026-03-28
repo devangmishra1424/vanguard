@@ -1,15 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pipeline } from '@xenova/transformers';
-
-// Singleton for model loading to avoid repeated initialization
-let laymanPipeline: any = null;
-
-const getPipeline = async () => {
-    if (!laymanPipeline) {
-        laymanPipeline = await pipeline('text2text-generation', 'Xenova/flan-t5-small');
-    }
-    return laymanPipeline;
-};
+import { searchTestKnowledge, generateRAGResponse } from '@/lib/ragEngine';
 
 const CLINICAL_DICT: Record<string, string> = {
   'Hemoglobin': 'Hemoglobin is the protein in your red blood cells that carries oxygen.',
@@ -34,28 +24,36 @@ const CLINICAL_DICT: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
     try {
-        const { test, value, status, lang } = await req.json();
+        const { test, value, status, lang, unit = '' } = await req.json();
 
-        // Dictionary Fallback (High-Confidence First)
+        // Dictionary Fallback for basic info
         if (lang === 'EN' && CLINICAL_DICT[test]) {
-            return NextResponse.json({ explanation: CLINICAL_DICT[test] });
+          let explanation = CLINICAL_DICT[test];
+          
+          // Add value-specific context
+          if (status === 'HIGH') {
+            explanation += ` In your case, it's elevated (${value} ${unit}), which means your body is producing or retaining too much of this marker.`;
+          } else if (status === 'LOW') {
+            explanation += ` In your case, it's low (${value} ${unit}), which means your body isn't producing or storing enough of this marker.`;
+          }
+          
+          return NextResponse.json({ explanation });
         }
 
-        const generator = await getPipeline();
-
-        // EkaCare Standardized Prompting (Fine-tuned on reportraahat-simplifier)
-        const prompt = `simplify medical finding: ${test} ${value} ${status}`;
+        // For RAG-enhanced explanations (Hindi or detailed English)
+        const systemPrompt = `You are a medical assistant explaining lab test results in simple, patient-friendly language.
         
-        const out = await generator(prompt, { 
-            max_new_tokens: 60,
-            temperature: 0.3,
-            repetition_penalty: 1.2
-        });
-        const explanation = out[0].generated_text.trim();
+Test: ${test}
+Value: ${value} ${unit}
+Status: ${status}
+
+Explain what this test measures, what the result means for the patient, and what they should do. Keep it simple and avoid medical jargon.`;
+
+        const explanation = await generateRAGResponse(test, systemPrompt);
         return NextResponse.json({ explanation });
 
     } catch (error) {
-        console.error('FLAN-T5 Inference Error:', error);
-        return NextResponse.json({ error: 'Inference failed' }, { status: 500 });
+        console.error('Layman Explanation Error:', error);
+        return NextResponse.json({ error: 'Explanation generation failed' }, { status: 500 });
     }
 }

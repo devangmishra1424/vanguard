@@ -340,9 +340,9 @@ export async function POST(req: NextRequest) {
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       const buffer = Buffer.from(base64Image, 'base64');
       
-      // We MUST provide a valid workerSrc, otherwise Turbopack/Webpack environments crash 
-      // when pdfjs tries to resolve relative paths using import.meta.url
-      (pdfjs as any).GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
+      // We DO NOT override workerSrc. Because 'pdfjs-dist' is in serverExternalPackages in next.config.ts,
+      // it stays perfectly intact in node_modules on Vercel. Thus, pdf.mjs's native default behavior
+      // of resolving 'pdf.worker.mjs' via import.meta.url as a file:// URI will work flawlessly!
       
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 } as any);
       const pdf = await loadingTask.promise;

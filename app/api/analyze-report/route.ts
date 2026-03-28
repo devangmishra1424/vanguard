@@ -567,7 +567,21 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. ORGAN INFERENCE (based on actual abnormal findings) ────────────────
-    const finalFindings: any[] = extractedFindings.length > 0 ? extractedFindings : (mockAnemia.labValues || []);
+    let finalFindings: any[] = extractedFindings;
+    
+    // DEBUG: If no findings but we extracted text, return the raw text as a finding
+    if (finalFindings.length === 0) {
+       finalFindings = [
+         {
+           name: 'DEBUG_TEXT',
+           value: 0,
+           unit: '',
+           status: 'HIGH',
+           layman_en: `No markers extracted. Raw text starts with: ${extractedText.substring(0, 300)}`
+         }
+       ];
+    }
+
     const ORGAN_MAP: Record<string, string[]> = {
       'blood':     ['hemoglobin', 'rbc', 'wbc', 'platelet', 'hematocrit', 'mcv', 'mch'],
       'liver':     ['alt', 'sgpt', 'ast', 'sgot', 'bilirubin', 'ggt', 'alp', 'albumin', 'inr', 'pt'],
@@ -1007,10 +1021,32 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Analysis Pipeline Error:', error);
-    // Return mock data as fallback, but log the error for debugging
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn(`⚠️ Analysis failed: ${errorMessage}. Using mock data fallback.`);
-    return NextResponse.json(mockVitaminD);
+    console.warn(`⚠️ Analysis failed: ${errorMessage}. Returning debug finding.`);
+    
+    // Return a visible error as a lab finding so the user can see it on the frontend
+    return NextResponse.json({
+      summary: "CRITICAL PIPELINE ERROR",
+      age: 0,
+      vitality_score: 0,
+      hindiSummary: 'त्रुटि (Error)',
+      labValues: [{
+        name: 'PIPELINE_ERROR',
+        value: 0,
+        unit: 'error',
+        status: 'HIGH',
+        layman_en: `Vercel threw an error: ${errorMessage}. Check Vercel logs for full stack trace.`,
+      }],
+      organFlags: [],
+      exerciseFlags: [],
+      dietaryFlags: [],
+      dietaryContext: '',
+      exerciseContext: '',
+      jargonMap: {},
+      ai_confidence_score: 0,
+      checklist: [],
+      reportText: errorMessage,
+    });
   }
 }
 

@@ -340,10 +340,9 @@ export async function POST(req: NextRequest) {
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       const buffer = Buffer.from(base64Image, 'base64');
       
-      // Node.js environments ignore workerSrc entirely and load the fake worker.
-      // We instruct pdf.js NOT to look for a separate worker if possible.
-      (pdfjs as any).GlobalWorkerOptions.workerSrc = '';
-      (pdfjs as any).GlobalWorkerOptions.workerPort = null;
+      // We MUST provide a valid workerSrc, otherwise Turbopack/Webpack environments crash 
+      // when pdfjs tries to resolve relative paths using import.meta.url
+      (pdfjs as any).GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
       
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 } as any);
       const pdf = await loadingTask.promise;

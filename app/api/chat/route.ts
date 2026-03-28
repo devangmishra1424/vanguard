@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server';
 import Groq from 'groq-sdk';
 import { executeFullPipeline } from '@/lib/ragEngine';
 
+// Set function timeout for Vercel
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === 'your_groq_api_key_here') {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeFullPipeline } from '@/lib/ragEngine';
 
+// Set function timeout for Vercel
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     const { labValues, exerciseFlags, exercisePlan, age, language } = await req.json();

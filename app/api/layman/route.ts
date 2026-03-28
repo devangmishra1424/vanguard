@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchTestKnowledge, generateRAGResponse } from '@/lib/ragEngine';
 
+// Set function timeout for Vercel
+export const maxDuration = 60;
+
 const CLINICAL_DICT: Record<string, string> = {
   'Hemoglobin': 'Hemoglobin is the protein in your red blood cells that carries oxygen.',
   'Bilirubin (Total)': 'Total Bilirubin measures the yellowish pigment made during the breakdown of red blood cells.',

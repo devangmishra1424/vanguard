@@ -1,11 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* Serverless function timeout optimization for Vercel */
-  serverRuntimeConfig: {
-    maxDuration: 60,
-  },
-  
   /* Webpack config for pdfjs-dist */
   webpack: (config, { isServer }) => {
     config.resolve.fallback = {
@@ -18,6 +13,9 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
+
+  /* Turbopack config (empty to acknowledge migration) */
+  turbopack: {},
 
   /* Experimental features for better performance */
   experimental: {

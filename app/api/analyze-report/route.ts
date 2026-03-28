@@ -6,6 +6,9 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 // @ts-ignore
 import * as pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 
+// Set function timeout for Vercel
+export const maxDuration = 60;
+
 // ── Clinical Knowledge Base ────────────────────────────────────────────────────
 // Canonical name → { aliases, normal range, instant explanation }
 const CLINICAL_DB: Record<string, {

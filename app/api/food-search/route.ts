@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
+// Set function timeout for Vercel
+export const maxDuration = 30;
+
 export type FoodSearchResult = {
   name: string;
   calories: number;

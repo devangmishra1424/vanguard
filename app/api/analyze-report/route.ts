@@ -336,12 +336,14 @@ export async function POST(req: NextRequest) {
         (globalThis as any).Path2D = class Path2D {} as any;
       }
       
+      // Keep using mjs since v5 drops CommonJS. next.config.ts serverExternalPackages will handle the Vercel chunking error.
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       const buffer = Buffer.from(base64Image, 'base64');
       
-      if (!(pdfjs as any).GlobalWorkerOptions.workerSrc) {
-        (pdfjs as any).GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-      }
+      // Node.js environments ignore workerSrc entirely and load the fake worker.
+      // We instruct pdf.js NOT to look for a separate worker if possible.
+      (pdfjs as any).GlobalWorkerOptions.workerSrc = '';
+      (pdfjs as any).GlobalWorkerOptions.workerPort = null;
       
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 } as any);
       const pdf = await loadingTask.promise;

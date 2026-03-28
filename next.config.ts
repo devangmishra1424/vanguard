@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       allowedOrigins: ['*'],
     },
   },
+  
+  /* Prevent Next.js from bundling pdfjs-dist, preserving worker require paths */
+  serverExternalPackages: ['pdfjs-dist'],
 };
 
 export default nextConfig;

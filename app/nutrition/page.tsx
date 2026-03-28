@@ -9,6 +9,7 @@ import {
   getJunkWarning,
   isJunkFood,
   computeNutrientRadar,
+  computeIntakeRadar,
   getDailyTargets,
   type FoodItem,
 } from '@/lib/nutritionEngine';
@@ -40,8 +41,15 @@ import {
   CheckCircle2,
   Flame,
   Loader2,
+  ChefHat,
+  Ban,
+  Check,
+  MessageSquareQuote,
+  Sparkles,
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { getDietPlan } from '@/lib/dietEngine';
 
 function fmt(n: number, d = 1) {
   return Number(n.toFixed(d));
@@ -243,11 +251,14 @@ export default function NutritionPage() {
     logFood,
     addNutritionXP,
     resetDailyProgress,
+    addXP,
+    reportText
   } = useStore();
 
   const [junkFood, setJunkFood] = useState<string | null>(null);
   const [junkWarning, setJunkWarning] = useState('');
   const [isMounted, setIsMounted] = useState(false);
+  const [coachingLanguage, setCoachingLanguage] = useState<'EN' | 'HI'>('EN');
 
   useEffect(() => {
     setIsMounted(true);
@@ -265,9 +276,14 @@ export default function NutritionPage() {
       iron: acc.iron + f.iron,
       calcium: acc.calcium + f.calcium,
       vitaminC: acc.vitaminC + f.vitaminC,
+      vitaminD: acc.vitaminD + (f.vitaminD || 0),
+      vitaminB12: acc.vitaminB12 + (f.vitaminB12 || 0),
+      folate: acc.folate + (f.folate || 0),
     }),
-    { calories: 0, protein: 0, iron: 0, calcium: 0, vitaminC: 0 }
+    { calories: 0, protein: 0, iron: 0, calcium: 0, vitaminC: 0, vitaminD: 0, vitaminB12: 0, folate: 0 }
   );
+
+  const intakeRadarData = computeIntakeRadar(totals, targets);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -286,10 +302,16 @@ export default function NutritionPage() {
   const xpGoal = 100;
   const xpPct = Math.min(100, Math.round((xpToday / xpGoal) * 100));
 
-  const condition = dietaryFlags.includes('IRON_RICH')
+  const condition = (dietaryFlags.includes('IRON_RICH') || dietaryFlags.includes('ANEMIA_DIET'))
     ? 'Iron Deficiency / Anemia'
-    : dietaryFlags.includes('LOW_FAT')
+    : (dietaryFlags.includes('LOW_FAT') || dietaryFlags.includes('LIVER_DETOX_DIET'))
     ? 'Liver Condition'
+    : (dietaryFlags.includes('LOW_GLYCEMIC_DIET') || dietaryFlags.includes('LOW_SUGAR'))
+    ? 'Diabetes / Glucose Balance'
+    : dietaryFlags.includes('HEART_HEALTHY_DIET')
+    ? 'Heart & Lipid Care'
+    : dietaryFlags.includes('KIDNEY_FRIENDLY_DIET')
+    ? 'Kidney Condition'
     : dietaryFlags.includes('VITAMIN_D_RICH')
     ? 'Vitamin D Deficiency'
     : dietaryFlags.includes('CALCIUM_RICH')
@@ -312,6 +334,9 @@ export default function NutritionPage() {
       iron: food.iron,
       calcium: food.calcium,
       vitaminC: food.vitaminC,
+      vitaminD: food.vitaminD,
+      vitaminB12: food.vitaminB12,
+      folate: food.folate,
       xpEarned,
       isJunk: junk,
       timestamp: Date.now(),
@@ -337,8 +362,53 @@ export default function NutritionPage() {
     );
   };
 
+  const dietPlan = getDietPlan(dietaryFlags);
+  const [aiInsight, setAiInsight] = useState('');
+  const [isInsightLoading, setIsInsightLoading] = useState(false);
+
+  const fetchAiInsight = async () => {
+    if (!labValues.length) return;
+    setIsInsightLoading(true);
+    setAiInsight('');
+    const { language } = useStore.getState();
+    try {
+      const res = await fetch('/api/diet-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          labValues,
+          dietaryFlags,
+          dietPlan,
+          language
+        })
+      });
+
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        setAiInsight(prev => prev + decoder.decode(value));
+      }
+    } catch (err) {
+      console.error(err);
+      setAiInsight('Error generating insight.');
+    } finally {
+      setIsInsightLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isMounted && labValues.length > 0 && !aiInsight) {
+      fetchAiInsight();
+    }
+  }, [isMounted, labValues]);
+
   return (
     <main className="min-h-screen bg-[#0F172A] p-4 md:p-8">
+
       <AnimatePresence>
         {junkFood && (
           <JunkModal
@@ -389,13 +459,13 @@ export default function NutritionPage() {
               <TrendingUp className="w-4 h-4 text-[#f59e0b]" /> Your Nutrient Status
             </h3>
             {isMounted && (
-              <div className="w-full h-[280px]">
+              <div className="w-full h-[320px] relative overflow-visible">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData}>
+                  <RadarChart data={intakeRadarData} cx="50%" cy="50%" outerRadius="80%">
                     <PolarGrid stroke="#334155" />
                     <PolarAngleAxis
-                      dataKey="subject"
-                      tick={{ fill: '#94a3b8', fontSize: 12 }}
+                      dataKey="nutrient"
+                      tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }}
                     />
                     <PolarRadiusAxis
                       angle={30}
@@ -404,11 +474,13 @@ export default function NutritionPage() {
                       axisLine={false}
                     />
                     <Radar
-                      name="Level"
-                      dataKey="A"
+                      name="Intake %"
+                      dataKey="value"
                       stroke="#f59e0b"
                       fill="#f59e0b"
-                      fillOpacity={0.35}
+                      fillOpacity={0.5}
+                      animationBegin={0}
+                      animationDuration={1000}
                     />
                   </RadarChart>
                 </ResponsiveContainer>
@@ -439,11 +511,13 @@ export default function NutritionPage() {
                   { label: 'Iron', val: fmt(totals.iron), max: targets.iron, unit: 'mg', color: '#ef4444' },
                   { label: 'Calcium', val: fmt(totals.calcium, 0), max: targets.calcium, unit: 'mg', color: '#3b82f6' },
                   { label: 'Vitamin C', val: fmt(totals.vitaminC), max: targets.vitaminC, unit: 'mg', color: '#a855f7' },
+                  { label: 'Vitamin D', val: fmt(totals.vitaminD), max: targets.vitaminD, unit: 'mcg', color: '#facc15' },
+                  { label: 'Vitamin B12', val: fmt(totals.vitaminB12), max: targets.vitaminB12, unit: 'mcg', color: '#ec4899' },
                 ].map(({ label, val, max, unit, color }) => (
                   <div key={label} className="space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400 font-semibold">{label}</span>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{label}</span>
+                      <span className="text-[10px] text-slate-500 font-bold">
                         {val}/{max} {unit}
                       </span>
                     </div>
@@ -454,6 +528,184 @@ export default function NutritionPage() {
             </Card>
           </div>
         </div>
+
+        {/* Row 1.5: Personalized Diet Plan (The AI + Rule Hybrid) */}
+        <AnimatePresence>
+          {isMounted && labValues.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+            >
+              {/* AI Coaching Box */}
+              <Card className="lg:col-span-1 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border-indigo-500/20 p-6 relative overflow-hidden flex flex-col justify-between">
+                <div className="absolute top-0 right-0 p-3 opacity-20 pointer-events-none">
+                  <Sparkles className="w-12 h-12 text-indigo-400" />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-black text-indigo-300 uppercase tracking-widest flex items-center gap-2">
+                      <MessageSquareQuote className="w-4 h-4" /> AI Coaching Insight
+                    </h3>
+                    <div className="flex bg-slate-800/50 p-1 rounded-lg border border-indigo-500/20">
+                      <button 
+                        onClick={() => setCoachingLanguage('EN')}
+                        className={`px-2 py-1 text-[9px] font-bold rounded transition-all ${coachingLanguage === 'EN' ? 'bg-[#f59e0b] text-white' : 'text-slate-500'}`}
+                      >EN</button>
+                      <button 
+                        onClick={() => setCoachingLanguage('HI')}
+                        className={`px-2 py-1 text-[9px] font-bold rounded transition-all ${coachingLanguage === 'HI' ? 'bg-[#f59e0b] text-white' : 'text-slate-500'}`}
+                      >HI</button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    {isInsightLoading && !aiInsight ? (
+                      <div className="flex items-center gap-3 py-4">
+                        <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                        <span className="text-xs text-indigo-400/70 font-mono tracking-tighter">Analyzing your report context...</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {(() => {
+                          const parts = aiInsight.split('HI:');
+                          const en = parts[0].replace('EN:', '').trim();
+                          const hi = parts[1]?.trim() || '';
+                          const content = coachingLanguage === 'EN' ? en : hi;
+                          
+                          if (!content) return <p className="text-[13px] leading-relaxed text-slate-300 italic">"{aiInsight || 'Loading your personalized advice...'}"</p>;
+
+                          return content.split('\n').map((line, idx) => {
+                            const cleanLine = line.replace(/^- /, '').trim();
+                            if (!cleanLine) return null;
+                            return (
+                              <div key={idx} className="flex gap-2 items-start">
+                                <span className="text-indigo-400 mt-1">✦</span>
+                                <p className="text-[13px] leading-relaxed text-slate-200">{cleanLine}</p>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-6 pt-4 border-t border-indigo-500/10 flex justify-between items-center text-[10px] text-indigo-400/60 uppercase font-black">
+                  <span>Dr. Raahat AI v2.0</span>
+                  <button onClick={fetchAiInsight} className="hover:text-indigo-300 transition-colors flex items-center gap-1 group">
+                    Regenerate <Zap className="w-2.5 h-2.5 group-hover:scale-110 transition-transform" />
+                  </button>
+                </div>
+              </Card>
+
+              {/* Rule-Based Consume/Avoid Table */}
+              <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Consume List */}
+                <Card className="bg-slate-900 border-green-500/20 p-5 border-l-4 border-l-green-500 shadow-xl">
+                  <h4 className="text-[11px] font-black text-green-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                    <Check className="w-4 h-4" /> Focus on These
+                  </h4>
+                  <div className="space-y-4">
+                    {dietPlan.consume.map((item) => (
+                      <div key={item.name} className="flex gap-3 items-start">
+                        <span className="text-xl flex-shrink-0">{item.emoji}</span>
+                        <div>
+                          <p className="text-sm font-bold text-slate-100">{item.name}</p>
+                          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{item.reason}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Avoid List */}
+                <Card className="bg-slate-900 border-red-500/20 p-5 border-l-4 border-l-red-500 shadow-xl">
+                  <h4 className="text-[11px] font-black text-red-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                    <Ban className="w-4 h-4" /> Strictly Avoid
+                  </h4>
+                  <div className="space-y-4">
+                    {dietPlan.avoid.map((item) => (
+                      <div key={item.name} className="flex gap-3 items-start grayscale opacity-60">
+                        <span className="text-xl flex-shrink-0">{item.emoji}</span>
+                        <div>
+                          <p className="text-sm font-bold text-slate-200">{item.name}</p>
+                          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{item.reason}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Chef Tip Full Width */}
+                <Card className="md:col-span-2 bg-[#f59e0b]/5 border-[#f59e0b]/20 p-4 flex items-center gap-4 hover:bg-[#f59e0b]/10 transition-colors">
+                  <div className="p-2.5 bg-[#f59e0b]/20 rounded-xl">
+                    <ChefHat className="w-5 h-5 text-[#f59e0b]" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-black tracking-widest text-[#f59e0b]">
+                      {coachingLanguage === 'EN' ? 'Raahat Chef Tips' : 'राहहत शेफ टिप्स'}
+                    </span>
+                    <div className="mt-2 space-y-2">
+                      {(coachingLanguage === 'EN' ? dietPlan.chefTips : dietPlan.chefTipsHi).map((tip, i) => (
+                        <div key={i} className="flex gap-2 items-start">
+                          <span className="text-[#f59e0b] mt-0.5">✦</span>
+                          <p className="text-xs text-[#f59e0b]/80 font-medium leading-relaxed">{tip}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Healing Clock (Nutrition Timing) */}
+                <div className="md:col-span-2 mt-4">
+                  <h4 className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                    <Clock className="w-4 h-4" /> The Healing Clock (Optimum Timing)
+                  </h4>
+                  <div className="relative border-l-2 border-slate-800 ml-3 space-y-8 pb-4">
+                    {dietPlan.schedule.map((slot, idx) => (
+                      <motion.div 
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="relative pl-8"
+                      >
+                        {/* Dot */}
+                        <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-slate-900 border-2 border-amber-500" />
+                        
+                        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-tighter w-16">
+                            {slot.time}
+                          </span>
+                          <div className="flex-1 bg-slate-800/30 rounded-xl p-3 border border-slate-800/50 hover:border-amber-500/30 transition-colors">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-bold text-slate-200">
+                                {coachingLanguage === 'EN' ? slot.activity : slot.activityHi}
+                              </span>
+                              <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-bold uppercase tracking-widest">
+                                {coachingLanguage === 'EN' ? 'Optimum' : 'सबसे सही समय'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 font-medium">
+                              <span className="text-amber-500/80">✦ </span>
+                              {coachingLanguage === 'EN' ? slot.foods : slot.foodsHi}
+                            </p>
+                            <div className="mt-2 pt-2 border-t border-slate-800/50 flex items-start gap-2">
+                              <Sparkles className="w-2.5 h-2.5 text-indigo-400 mt-0.5" />
+                              <p className="text-[10px] text-slate-500 italic">
+                                {coachingLanguage === 'EN' ? slot.tip : slot.tipHi}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Row 2: Recommended Foods */}
         <div>

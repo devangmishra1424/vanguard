@@ -22,6 +22,7 @@ export const Nav = () => {
     { href: '/dashboard', icon: LayoutDashboard, label: t('health') },
     { href: '/nutrition', icon: Apple, label: t('diet') },
     { href: '/exercise', icon: Dumbbell, label: t('move') },
+    { href: '/vitals', icon: Activity, label: 'Vault' },
     { href: '/avatar', icon: User, label: t('me') },
   ];
 

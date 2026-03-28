@@ -4,7 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { mockAnemia } from '@/lib/mockData';
+import { mockAnemia, mockLiver } from '@/lib/mockData';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Loader2, Upload, FileText, ChevronRight } from 'lucide-react';
@@ -65,7 +65,9 @@ export default function LandingPage() {
         });
 
         const data = await res.json();
+        const { saveReportToHistory } = useStore.getState();
         setReportData(data);
+        saveReportToHistory();
         clearInterval(interval);
         router.push('/dashboard');
       };
@@ -180,12 +182,26 @@ export default function LandingPage() {
             <Button 
               variant="ghost" 
               onClick={() => {
+                const { saveReportToHistory } = useStore.getState();
                 setReportData(mockAnemia);
+                saveReportToHistory();
                 router.push('/dashboard');
               }}
               className="text-slate-400 hover:text-[#f59e0b] hover:bg-orange-500/10 gap-2"
             >
               <FileText className="w-4 h-4" /> Load Demo Report (Anemia)
+            </Button>
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                const { saveReportToHistory } = useStore.getState();
+                setReportData(mockLiver);
+                saveReportToHistory();
+                router.push('/dashboard');
+              }}
+              className="text-slate-400 hover:text-green-500 hover:bg-green-500/10 gap-2"
+            >
+              <FileText className="w-4 h-4" /> Load Demo Report (Liver)
             </Button>
           </div>
         </Card>

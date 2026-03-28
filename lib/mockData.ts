@@ -18,6 +18,7 @@ export const mockAnemia: Partial<GUCState> = {
     'MCV': 'Average size of your red blood cells',
     'Hemoglobin': 'Protein in red blood cells that carries oxygen'
   },
+  age: 24,
   ai_confidence_score: 95,
   checklist: [
     { id: '1', task: 'Take prescribed iron supplements with orange juice (Vitamin C)', completed: false },
@@ -47,6 +48,7 @@ export const mockLiver: Partial<GUCState> = {
     'AST': 'Another enzyme that may indicate liver damage',
     'Bilirubin': 'Yellow pigment formed in the liver'
   },
+  age: 52,
   ai_confidence_score: 92,
   checklist: [
     { id: '1', task: 'Avoid fried and fatty foods', completed: false },
@@ -74,6 +76,7 @@ export const mockVitaminD: Partial<GUCState> = {
     '25-OH Vitamin D': 'The main form of Vitamin D in your blood',
     'Calcium': 'Mineral essential for bone health'
   },
+  age: 68,
   ai_confidence_score: 98,
   checklist: [
     { id: '1', task: 'Spend 15-20 minutes in early morning sunlight', completed: false },

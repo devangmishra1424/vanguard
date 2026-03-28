@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mockAnemia, mockVitaminD } from '@/lib/mockData';
 import { searchRAG, searchTestKnowledge, searchDietRecommendations, searchExerciseRecommendations, formatRAGContext, initializeRAG, executeFullPipeline } from '@/lib/ragEngine';
-// @ts-ignore
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-// @ts-ignore
-import * as pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+// pdfjs is dynamically imported in the POST handler to avoid Vercel build issues
 
 // Set function timeout for Vercel
 export const maxDuration = 60;
@@ -331,10 +328,21 @@ export async function POST(req: NextRequest) {
     let extractedText = '';
 
     if (isPDF) {
-      const buffer = Buffer.from(base64Image, 'base64');
-      if (!(pdfjs as any).GlobalWorkerOptions.workerSrc) {
-        (pdfjs as any).GlobalWorkerOptions.workerSrc = pdfWorker;
+      // Vercel serverless environment polyfills for pdfjs-dist
+      if (typeof globalThis.DOMMatrix === 'undefined') {
+        globalThis.DOMMatrix = class DOMMatrix {} as any;
       }
+      if (typeof globalThis.Path2D === 'undefined') {
+        (globalThis as any).Path2D = class Path2D {} as any;
+      }
+      
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const buffer = Buffer.from(base64Image, 'base64');
+      
+      if (!(pdfjs as any).GlobalWorkerOptions.workerSrc) {
+        (pdfjs as any).GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+      }
+      
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 } as any);
       const pdf = await loadingTask.promise;
 
